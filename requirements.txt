@@ -1,0 +1,2 @@
+Required dependencies:
+requests, pandas, beautifulsoup4
