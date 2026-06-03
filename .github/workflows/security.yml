@@ -23,8 +23,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install project dependencies
+        run: pip install -r requirements.txt
+
       - name: Install pip-audit
         run: pip install pip-audit
 
-      - name: Run security audit
-        run: pip-audit -r requirements.txt
+      - name: Run pip-audit on installed packages
+        run: pip-audit --local --progress-spinner off
