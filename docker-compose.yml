@@ -1,0 +1,191 @@
+# ---------------------------------------------------------------------------
+# Jumia Kenya Price Pipeline — Docker Compose
+# Ports assigned for this project (parallel build constraints):
+#   App PostgreSQL:      5435 (host) -> 5432 (container)
+#   Airflow PostgreSQL:  5436 (host) -> 5432 (container)
+#   Airflow webserver:   8080
+#   Apache Superset:     8088
+# ---------------------------------------------------------------------------
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow:5432/airflow
+    AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nfdstY="
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    AIRFLOW__WEBSERVER__SECRET_KEY: "jumia_secret_key_2024"
+    # SimpleAuthManager — Airflow 3.0 built-in (no provider needed)
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "admin:admin"
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+    # API server URL for task execution
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-webserver:8080/execution/"
+    # JWT secret for internal service auth (scheduler -> api-server)
+    AIRFLOW__API_AUTH__JWT_SECRET: "jumia-jwt-secret-2024"
+    # App database connection for scraper
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    POSTGRES_DB: jumia_db
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    PYTHONPATH: "/opt/airflow"
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./scraper:/opt/airflow/scraper
+    - ./dbt:/opt/airflow/dbt
+    - ./tests:/opt/airflow/tests
+    - ./passwords.json:/opt/airflow/simple_auth_manager_passwords.json.generated
+    - airflow_logs:/opt/airflow/logs
+  depends_on:
+    postgres-airflow:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+
+services:
+
+  # --------------------------------------------------------------------------
+  # App database — stores scraped Jumia product data
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:15
+    container_name: jumia_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: jumia_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d jumia_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # Airflow metadata database
+  # --------------------------------------------------------------------------
+  postgres-airflow:
+    image: postgres:15
+    container_name: jumia_postgres_airflow
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5436:5432"
+    volumes:
+      - airflow_metadata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # Airflow — one-time database initialisation
+  # --------------------------------------------------------------------------
+  airflow-init:
+    <<: *airflow-common
+    container_name: jumia_airflow_init
+    command: >
+      bash -c "
+        airflow db migrate &&
+        echo 'Airflow DB initialised'
+      "
+    restart: "no"
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # --------------------------------------------------------------------------
+  # Airflow API server (Airflow 3.0 — replaces legacy webserver)
+  # --------------------------------------------------------------------------
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: jumia_airflow_webserver
+    command: api-server --workers 1
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # --------------------------------------------------------------------------
+  # Airflow scheduler
+  # --------------------------------------------------------------------------
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: jumia_airflow_scheduler
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # --------------------------------------------------------------------------
+  # Airflow DAG processor (required in Airflow 3.0)
+  # --------------------------------------------------------------------------
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: jumia_airflow_dag_processor
+    command: dag-processor
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # --------------------------------------------------------------------------
+  # Apache Superset — dashboards & visualisations
+  # --------------------------------------------------------------------------
+  superset:
+    image: apache/superset:latest
+    container_name: jumia_superset
+    environment:
+      SUPERSET_SECRET_KEY: "jumia_superset_secret_2024"
+      ADMIN_USERNAME: admin
+      ADMIN_EMAIL: admin@superset.local
+      ADMIN_PASSWORD: admin123
+    ports:
+      - "8088:8088"
+    command: >
+      bash -c "
+        pip install psycopg2-binary --quiet &&
+        superset db upgrade &&
+        superset fab create-admin
+          --username admin
+          --firstname Superset
+          --lastname Admin
+          --email admin@superset.local
+          --password admin123 2>/dev/null || true &&
+        superset init &&
+        superset run -h 0.0.0.0 -p 8088
+      "
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8088/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  airflow_metadata:
+  airflow_logs:

@@ -1,0 +1,102 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: product_prices
+        description: "Raw product price data scraped from Jumia Kenya."
+        columns:
+          - name: product_id
+            description: "Auto-incremented primary key."
+          - name: product_name
+            description: "Full product name as displayed on Jumia."
+          - name: current_price_kes
+            description: "Current listed price in Kenyan Shillings."
+          - name: old_price_kes
+            description: "Original price before discount (NULL if no discount)."
+          - name: discount_pct
+            description: "Discount percentage shown on the product badge."
+          - name: category
+            description: "Jumia category label."
+          - name: product_url
+            description: "Absolute URL to the product page."
+          - name: scraped_at
+            description: "Timestamp when the row was written."
+          - name: page_num
+            description: "Pagination page number the product was found on."
+          - name: scrape_date
+            description: "Calendar date of the scrape run."
+
+models:
+  - name: stg_jumia_products
+    description: "Cleaned and type-cast staging view of raw product prices."
+    columns:
+      - name: product_id
+        description: "Source primary key."
+        tests:
+          - not_null
+          - unique
+      - name: product_name
+        description: "Product display name (may be NULL for some Jumia card layouts)."
+      - name: current_price_kes
+        description: "Current price — NULL rows excluded at this layer."
+        tests:
+          - not_null
+      - name: category
+        description: "Jumia category."
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - "Smartphones"
+                - "Computing"
+                - "TVs & Audio"
+                - "Home Appliances"
+                - "Men''s Fashion"
+                - "Supermarket"
+      - name: discount_pct
+        description: "Discount percentage; must be >= 0 when present."
+
+  - name: fct_product_prices
+    description: "Fact table — one row per product per scrape_date."
+    columns:
+      - name: product_id
+        description: "Source primary key from raw layer."
+        tests:
+          - not_null
+          - unique
+      - name: product_name
+        description: "Product display name (may be NULL for some Jumia card layouts)."
+      - name: current_price_kes
+        tests:
+          - not_null
+      - name: category
+        tests:
+          - not_null
+      - name: scrape_date
+        tests:
+          - not_null
+
+  - name: mart_category_summary
+    description: "Per-category per-day aggregated price metrics."
+    columns:
+      - name: category
+        tests:
+          - not_null
+      - name: scrape_date
+        tests:
+          - not_null
+      - name: product_count
+        tests:
+          - not_null
+
+  - name: mart_discount_leaders
+    description: "Top 20 discounted products per category for most recent scrape."
+    columns:
+      - name: category
+        tests:
+          - not_null
+      - name: discount_pct
+        tests:
+          - not_null

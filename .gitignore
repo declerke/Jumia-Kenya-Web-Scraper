@@ -1,0 +1,51 @@
+# Environment & secrets
+.env
+*.env
+passwords.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Docker
+*.override.yml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project notes — local only, never pushed
+projectsummary.md
+
+# Data files
+data/
+*.csv
+*.parquet
+
+# Assets (screenshots added after running)
+assets/*.png
+assets/*.jpg
+assets/*.jpeg
+!assets/.gitkeep

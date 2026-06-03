@@ -1,0 +1,1 @@
+# Jumia Kenya scraper package
