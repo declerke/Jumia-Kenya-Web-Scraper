@@ -9,7 +9,6 @@ Orchestrates the full Jumia Kenya price intelligence pipeline:
 """
 
 import logging
-import os
 from datetime import datetime, timedelta
 
 from airflow import DAG
@@ -37,9 +36,6 @@ default_args = {
 
 def scrape_all_categories_fn(**context):
     """Scrape all Jumia Kenya categories and UPSERT to raw.product_prices."""
-    import sys
-    sys.path.insert(0, "/opt/airflow")
-
     from scraper.jumia_scraper import run_all_scrapers
 
     results = run_all_scrapers(pages_per_category=3)
@@ -54,34 +50,17 @@ def scrape_all_categories_fn(**context):
 
 
 def log_summary_fn(**context):
-    """Query raw.product_prices and log per-category counts."""
-    import sys
-    sys.path.insert(0, "/opt/airflow")
-
-    from scraper.jumia_scraper import get_db_connection
-
-    conn = get_db_connection()
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT category, COUNT(*) AS product_count
-            FROM raw.product_prices
-            GROUP BY category
-            ORDER BY product_count DESC;
-            """
-        )
-        rows = cur.fetchall()
-
-    conn.close()
+    """Log per-category scrape counts from the upstream XCom result."""
+    results = context["ti"].xcom_pull(task_ids="scrape_all_categories", key="scrape_results") or {}
 
     logger.info("=== Product counts by category ===")
     total = 0
-    for category, count in rows:
+    for category, count in sorted(results.items(), key=lambda x: x[1], reverse=True):
         logger.info("  %-25s %d products", category, count)
         total += count
     logger.info("  %-25s %d products", "TOTAL", total)
 
-    return {row[0]: row[1] for row in rows}
+    return results
 
 
 # ---------------------------------------------------------------------------

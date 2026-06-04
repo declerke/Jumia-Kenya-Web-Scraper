@@ -44,8 +44,5 @@ data/
 *.csv
 *.parquet
 
-# Assets (screenshots added after running)
-assets/*.png
-assets/*.jpg
-assets/*.jpeg
+# Keep assets placeholder
 !assets/.gitkeep

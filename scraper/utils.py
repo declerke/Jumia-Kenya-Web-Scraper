@@ -22,7 +22,7 @@ def parse_price(price_str: Optional[str]) -> Optional[float]:
         return None
 
     cleaned = price_str.strip()
-    if cleaned.upper() in ("N/A", "-", ""):
+    if cleaned.upper() in ("N/A", "-"):
         return None
 
     # Remove currency prefix (KSh, KES, etc.) and whitespace

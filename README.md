@@ -77,10 +77,10 @@ Production-grade e-commerce price intelligence pipeline that scrapes 6 Jumia Ken
 ## Pipeline Flow
 
 1. **Airflow triggers** `jumia_price_pipeline` DAG on schedule (`@daily`) or manually
-2. **`scrape_all_categories`** — Python task spawns a `requests.Session` per category; scrapes 3 pages x 6 categories with 2–4 s rate-limiting between pages; UPSERTs all records into `raw.product_prices`
+2. **`scrape_all_categories`** — Python task shares a single `requests.Session` across all 6 categories; scrapes 3 pages per category with 2–4 s rate-limiting between pages; batch-UPSERTs all records into `raw.product_prices` via `execute_values`
 3. **`run_dbt_models`** — BashOperator runs `dbt run`; builds `stg_jumia_products` (view), then `fct_product_prices`, `mart_category_summary`, `mart_discount_leaders` (tables)
 4. **`run_dbt_tests`** — BashOperator runs `dbt test`; validates not_null, unique, accepted_values constraints across all models
-5. **`log_summary`** — Python task queries `raw.product_prices`, logs per-category product counts and grand total
+5. **`log_summary`** — Python task reads per-category counts from XCom (no DB round-trip), logs product counts and grand total
 
 ---
 
@@ -99,9 +99,9 @@ Production-grade e-commerce price intelligence pipeline that scrapes 6 Jumia Ken
 
 | Type | Count | Scope |
 |---|---|---|
-| pytest unit tests | 22 | Price parsing, discount parsing, URL building, HTML product card parsing, edge cases |
-| dbt schema tests | 16 | not_null x 8, unique x 4, accepted_values x 2, not_null on mart columns x 2 |
-| **Total** | **38** | |
+| pytest unit tests | 34 | Price parsing, discount parsing, URL building, HTML product card parsing, edge cases |
+| dbt schema tests | 15 | not_null x 8, unique x 4, accepted_values x 1, not_null on mart columns x 2 |
+| **Total** | **49** | |
 
 ---
 
@@ -216,12 +216,22 @@ docker-compose down -v
 |---|---|
 | Categories scraped | 5 active (6 configured) |
 | Pages per category | 3 |
-| Total products in raw table | 794 rows |
+| Total products in raw table | 766 rows |
 | dbt models passing | 4 / 4 |
 | dbt tests passing | 15 / 15 |
 | pytest passing | 34 / 34 |
-| DAG task runtime | ~70s scrape + ~10s dbt |
+| DAG task runtime | ~55s scrape + ~15s dbt = 125s total |
 | Superset accessible | Yes — http://localhost:8088 |
+
+---
+
+## Screenshots
+
+**Airflow — 4/4 tasks SUCCESS (125s total run)**
+![Airflow DAG run](assets/airflow_dag_success.png)
+
+**Superset SQL Lab — live category price intelligence**
+![Superset SQL Lab](assets/superset_sqllab.png)
 
 ---
 

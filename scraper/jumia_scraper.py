@@ -12,6 +12,7 @@ import time
 from typing import List, Dict, Any, Optional
 
 import psycopg2
+import psycopg2.extras
 import requests
 from bs4 import BeautifulSoup
 
@@ -120,20 +121,23 @@ def parse_products(soup: BeautifulSoup, category: str, page_num: int) -> List[Di
     return products
 
 
-def scrape_category(category: str, base_url: str, pages: int = MIN_PAGES) -> List[Dict[str, Any]]:
+def scrape_category(
+    category: str,
+    base_url: str,
+    pages: int = MIN_PAGES,
+    session: Optional[requests.Session] = None,
+) -> List[Dict[str, Any]]:
     """
     Scrape `pages` pages of a Jumia category.
 
     Rate limiting: random sleep of 2–4 seconds between page requests.
+    Pass a shared session from run_all_scrapers to reuse connections across categories.
     """
     all_products: List[Dict[str, Any]] = []
-    session = requests.Session()
+    session = session or requests.Session()
 
     for page_num in range(1, pages + 1):
-        if page_num == 1:
-            url = base_url
-        else:
-            url = f"{base_url}?page={page_num}"
+        url = base_url if page_num == 1 else f"{base_url}?page={page_num}"
 
         logger.info("Fetching: %s", url)
         soup = fetch_page(url, session)
@@ -179,33 +183,18 @@ def ensure_schema(conn: psycopg2.extensions.connection) -> None:
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS raw.product_prices (
-                product_id       SERIAL PRIMARY KEY,
-                product_name     VARCHAR(500),
+                product_id        SERIAL PRIMARY KEY,
+                product_name      VARCHAR(500),
                 current_price_kes NUMERIC(12,2),
-                old_price_kes    NUMERIC(12,2),
-                discount_pct     NUMERIC(5,2),
-                category         VARCHAR(100),
-                product_url      TEXT,
-                scraped_at       TIMESTAMPTZ DEFAULT NOW(),
-                page_num         INT,
-                scrape_date      DATE DEFAULT CURRENT_DATE
+                old_price_kes     NUMERIC(12,2),
+                discount_pct      NUMERIC(5,2),
+                category          VARCHAR(100),
+                product_url       TEXT,
+                scraped_at        TIMESTAMPTZ DEFAULT NOW(),
+                page_num          INT,
+                scrape_date       DATE DEFAULT CURRENT_DATE,
+                CONSTRAINT uq_product_url_scrape_date UNIQUE (product_url, scrape_date)
             );
-            """
-        )
-        # Unique constraint for UPSERT key: product_url + scrape_date
-        cur.execute(
-            """
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint
-                    WHERE conname = 'uq_product_url_scrape_date'
-                ) THEN
-                    ALTER TABLE raw.product_prices
-                    ADD CONSTRAINT uq_product_url_scrape_date
-                    UNIQUE (product_url, scrape_date);
-                END IF;
-            END $$;
             """
         )
     conn.commit()
@@ -229,20 +218,29 @@ def upsert_products(
         INSERT INTO raw.product_prices
             (product_name, current_price_kes, old_price_kes, discount_pct,
              category, product_url, page_num)
-        VALUES
-            (%(product_name)s, %(current_price_kes)s, %(old_price_kes)s,
-             %(discount_pct)s, %(category)s, %(product_url)s, %(page_num)s)
+        VALUES %s
         ON CONFLICT (product_url, scrape_date) DO UPDATE SET
             product_name      = EXCLUDED.product_name,
             current_price_kes = EXCLUDED.current_price_kes,
             old_price_kes     = EXCLUDED.old_price_kes,
             discount_pct      = EXCLUDED.discount_pct,
             page_num          = EXCLUDED.page_num,
-            scraped_at        = NOW();
+            scraped_at        = NOW()
     """
-
+    # Deduplicate by product_url within the batch — same URL on multiple pages
+    # would cause CardinalityViolation when all rows are sent in a single INSERT.
+    seen: dict = {}
+    for p in products:
+        key = p["product_url"]
+        if key not in seen:
+            seen[key] = p
+    values = [
+        (p["product_name"], p["current_price_kes"], p["old_price_kes"],
+         p["discount_pct"], p["category"], p["product_url"], p["page_num"])
+        for p in seen.values()
+    ]
     with conn.cursor() as cur:
-        cur.executemany(sql, products)
+        psycopg2.extras.execute_values(cur, sql, values, page_size=500)
     conn.commit()
     logger.info("Upserted %d product rows.", len(products))
     return len(products)
@@ -263,11 +261,12 @@ def run_all_scrapers(pages_per_category: int = MIN_PAGES) -> Dict[str, int]:
 
     results: Dict[str, int] = {}
 
-    for category, base_url in CATEGORIES.items():
-        logger.info("=== Starting scrape: %s ===", category)
-        products = scrape_category(category, base_url, pages=pages_per_category)
-        count = upsert_products(conn, products)
-        results[category] = count
+    with requests.Session() as session:
+        for category, base_url in CATEGORIES.items():
+            logger.info("=== Starting scrape: %s ===", category)
+            products = scrape_category(category, base_url, pages=pages_per_category, session=session)
+            count = upsert_products(conn, products)
+            results[category] = count
 
     conn.close()
     logger.info("All categories complete. Summary: %s", results)
