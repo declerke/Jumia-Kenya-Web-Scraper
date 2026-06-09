@@ -30,5 +30,5 @@ jobs:
         run: pip install pip-audit
 
       - name: Run pip-audit on installed packages
-        # GHSA-w75w-9qv4-j5xj: dbt-common path traversal CVE — fix requires dbt-core 1.34+ upgrade
-        run: pip-audit --local --progress-spinner off --ignore-vuln GHSA-w75w-9qv4-j5xj
+        # GHSA-w75w-9qv4-j5xj / CVE-2026-29790: dbt-common path traversal — fix requires dbt-core 1.34+
+        run: pip-audit --local --progress-spinner off --ignore-vuln GHSA-w75w-9qv4-j5xj --ignore-vuln CVE-2026-29790
