@@ -9,7 +9,7 @@ beautifulsoup4==4.12.3
 psycopg2-binary==2.9.9
 
 # Data transformation
-pandas==2.2.2
+pandas==2.1.4
 
 # dbt
 dbt-core==1.11.16
