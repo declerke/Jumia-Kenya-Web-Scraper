@@ -35,3 +35,68 @@ jobs:
 
       - name: Run pip-audit on installed packages
         run: pip-audit --local --progress-spinner off
+
+  container-image:
+    name: Build, test, and scan the Airflow image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build the production image
+        run: docker build --pull --tag jumia-scraper:${GITHUB_SHA} .
+
+      - name: Verify Airflow, dbt, DAG, and scraper tests in the image
+        env:
+          IMAGE: jumia-scraper:${{ github.sha }}
+        run: |
+          docker run --rm \
+            --entrypoint bash \
+            -v "${GITHUB_WORKSPACE}:/workspace:ro" \
+            -w /workspace \
+            "${IMAGE}" \
+            -euo pipefail -c '
+              export PYTHONDONTWRITEBYTECODE=1
+              python -m pip check
+              /opt/airflow/dbt-venv/bin/python -m pip check
+              airflow version
+              /opt/airflow/dbt-venv/bin/dbt --version
+              python -m pytest -q -p no:cacheprovider tests
+              /opt/airflow/dbt-venv/bin/dbt parse --project-dir /workspace/dbt --profiles-dir /workspace/dbt --target-path /tmp/dbt-target --no-partial-parse
+              python .github/scripts/validate_pipeline.py
+            '
+
+      - name: Export installed package lists from both image environments
+        env:
+          IMAGE: jumia-scraper:${{ github.sha }}
+        run: |
+          docker run --rm --entrypoint python "${IMAGE}" -m pip list --format=freeze > image-airflow-packages.txt
+          docker run --rm --entrypoint /opt/airflow/dbt-venv/bin/python "${IMAGE}" -m pip list --format=freeze > image-dbt-packages.txt
+
+      - name: Set up Python for auditing image package lists
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-audit
+        run: python -m pip install --disable-pip-version-check pip-audit==2.10.1
+
+      - name: Audit the installed Airflow environment
+        run: pip-audit --no-deps --requirement image-airflow-packages.txt --progress-spinner off
+
+      - name: Audit the installed dbt environment
+        run: pip-audit --no-deps --requirement image-dbt-packages.txt --progress-spinner off
+
+      - name: Scan the built image with Trivy
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          scan-type: image
+          image-ref: jumia-scraper:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false

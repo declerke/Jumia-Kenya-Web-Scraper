@@ -16,6 +16,7 @@ from airflow.operators.python import PythonOperator
 from airflow.operators.bash import BashOperator
 
 logger = logging.getLogger(__name__)
+DBT_BIN = "/opt/airflow/dbt-venv/bin/dbt"
 
 # ---------------------------------------------------------------------------
 # Default arguments
@@ -86,7 +87,7 @@ with DAG(
         task_id="run_dbt_models",
         bash_command=(
             "cd /opt/airflow && "
-            "dbt run "
+            f"{DBT_BIN} run "
             "--project-dir /opt/airflow/dbt "
             "--profiles-dir /opt/airflow/dbt "
             "--no-version-check"
@@ -97,7 +98,7 @@ with DAG(
         task_id="run_dbt_tests",
         bash_command=(
             "cd /opt/airflow && "
-            "dbt test "
+            f"{DBT_BIN} test "
             "--project-dir /opt/airflow/dbt "
             "--profiles-dir /opt/airflow/dbt "
             "--no-version-check"

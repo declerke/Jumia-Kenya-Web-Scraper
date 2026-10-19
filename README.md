@@ -44,7 +44,8 @@ This pipeline demonstrates the full production data engineering stack applied to
 | Orchestration | Apache Airflow (LocalExecutor) | 3.0 |
 | Web scraping | Python requests + BeautifulSoup4 | 2.33.0 / 4.12.3 |
 | Raw storage | PostgreSQL | 15 |
-| Transformation | dbt-postgres | 1.8.2 |
+| Transformation | dbt-core | 1.11.16 |
+| Transformation | dbt-postgres | 1.11.0 |
 | Dashboards | Apache Superset | latest |
 | Containerisation | Docker Compose (7 services) | — |
 | Testing | pytest | 9.0.3 |
@@ -167,7 +168,7 @@ Jumia-Kenya-Web-Scraper/
 │   ├── test_scraper.py                 # 10 tests: HTML card parsing, price filtering, URL building
 │   └── test_utils.py                   # 24 tests: KSh parsing, discount parsing, URL normalisation
 ├── assets/                             # Dashboard screenshots (7 images)
-├── Dockerfile                          # Airflow 3.0 image with requests, bs4, dbt-postgres, psycopg2
+├── Dockerfile                          # Airflow 3.0 image with dbt isolated in its own virtual environment
 ├── docker-compose.yml                  # 7 services: 2× postgres, init, api-server, scheduler,
 │                                       #   dag-processor, superset
 ├── passwords.json                      # Airflow 3.0 SimpleAuthManager credentials
@@ -197,7 +198,7 @@ Jumia-Kenya-Web-Scraper/
    ```bash
    docker compose up -d --build
    ```
-   First build installs requests, BeautifulSoup4, dbt-postgres, and psycopg2 into the Airflow image (~2 minutes).
+   The image installs the scraper dependencies in the Airflow environment and dbt 1.11.16 with dbt-postgres 1.11.0 in an isolated virtual environment.
 
 3. **Wait for initialisation** (~60 seconds)
    ```bash
@@ -282,4 +283,4 @@ Jumia-Kenya-Web-Scraper/
 
 - **Docker Compose multi-service orchestration** — 7-service stack with two independent PostgreSQL instances (app data and Airflow metadata on different host ports); custom Airflow Dockerfile installing project deps as `USER airflow` per Airflow 3 container conventions; `service_healthy` dependency conditions using `pg_isready` health checks; named volumes for data persistence across restarts
 
-- **GitHub Actions CI security scanning** — `pip-audit --local` pattern (install-first, then audit installed packages) to handle complex dependency trees that pip-audit's internal resolver cannot solve; `--ignore-vuln GHSA-w75w-9qv4-j5xj` with inline comment documenting the unfixable dbt-common CVE (requires dbt-core 1.34+ upgrade which breaks adapter compatibility); weekly scheduled scan on Mondays
+- **GitHub Actions CI security scanning** — audits installed dependencies from `requirements.txt`, exports and audits the installed package lists from both environments in the built Airflow image, and scans the built image with Trivy; no advisory suppressions; weekly scheduled scan on Mondays
