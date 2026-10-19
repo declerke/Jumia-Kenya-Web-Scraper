@@ -50,7 +50,7 @@ jobs:
       - name: Build the production image
         run: docker build --pull --tag jumia-scraper:${GITHUB_SHA} .
 
-      - name: Verify Airflow, dbt, DAG, and scraper tests in the image
+      - name: Verify Airflow and dbt environments and run scraper tests in the image
         env:
           IMAGE: jumia-scraper:${{ github.sha }}
         run: |
@@ -66,9 +66,30 @@ jobs:
               airflow version
               /opt/airflow/dbt-venv/bin/dbt --version
               python -m pytest -q -p no:cacheprovider tests
-              /opt/airflow/dbt-venv/bin/dbt parse --project-dir /workspace/dbt --profiles-dir /workspace/dbt --target-path /tmp/dbt-target --no-partial-parse
-              python .github/scripts/validate_pipeline.py
             '
+
+      - name: Parse the dbt project in the built image
+        env:
+          IMAGE: jumia-scraper:${{ github.sha }}
+        run: |
+          docker run --rm \
+            --entrypoint /opt/airflow/dbt-venv/bin/dbt \
+            -v "${GITHUB_WORKSPACE}:/workspace:ro" \
+            -w /workspace \
+            "${IMAGE}" \
+            parse --project-dir /workspace/dbt --profiles-dir /workspace/dbt --target-path /tmp/dbt-target --no-partial-parse
+
+      - name: Validate the Airflow DAG in the built image
+        env:
+          IMAGE: jumia-scraper:${{ github.sha }}
+        run: |
+          docker run --rm \
+            --entrypoint python \
+            -e PYTHONPATH=/workspace \
+            -v "${GITHUB_WORKSPACE}:/workspace:ro" \
+            -w /workspace \
+            "${IMAGE}" \
+            .github/scripts/validate_pipeline.py
 
       - name: Export installed package lists from both image environments
         env:
