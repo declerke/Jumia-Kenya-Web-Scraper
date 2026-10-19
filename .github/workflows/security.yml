@@ -73,11 +73,19 @@ jobs:
           IMAGE: jumia-scraper:${{ github.sha }}
         run: |
           docker run --rm \
-            --entrypoint /opt/airflow/dbt-venv/bin/dbt \
+            --entrypoint bash \
             -v "${GITHUB_WORKSPACE}:/workspace:ro" \
             -w /workspace \
             "${IMAGE}" \
-            parse --project-dir /workspace/dbt --profiles-dir /workspace/dbt --target-path /tmp/dbt-target --no-partial-parse
+            -euo pipefail -c '
+              mkdir -p /tmp/dbt-logs /tmp/dbt-target
+              /opt/airflow/dbt-venv/bin/dbt parse \
+                --project-dir /workspace/dbt \
+                --profiles-dir /workspace/dbt \
+                --target-path /tmp/dbt-target \
+                --log-path /tmp/dbt-logs \
+                --no-partial-parse
+            '
 
       - name: Validate the Airflow DAG in the built image
         env:
