@@ -12,8 +12,8 @@ import logging
 from datetime import datetime, timedelta
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.operators.bash import BashOperator
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.providers.standard.operators.bash import BashOperator
 
 logger = logging.getLogger(__name__)
 DBT_BIN = "/opt/airflow/dbt-venv/bin/dbt"

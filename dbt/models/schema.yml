@@ -48,13 +48,14 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values:
-                - "Smartphones"
-                - "Computing"
-                - "TVs & Audio"
-                - "Home Appliances"
-                - "Men''s Fashion"
-                - "Supermarket"
+              arguments:
+                values:
+                  - "Smartphones"
+                  - "Computing"
+                  - "TVs & Audio"
+                  - "Home Appliances"
+                  - "Men's Fashion"
+                  - "Supermarket"
       - name: discount_pct
         description: "Discount percentage; must be >= 0 when present."
 
