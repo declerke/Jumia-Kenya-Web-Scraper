@@ -9,11 +9,12 @@ beautifulsoup4==4.12.3
 psycopg2-binary==2.9.9
 
 # Data transformation
-pandas==2.2.2
+pandas==2.1.4
 
 # dbt
 dbt-core==1.11.16
 dbt-postgres==1.11.0
+sqlparse==0.6.0
 deepdiff>=8.6.2
 
 # Testing

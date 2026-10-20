@@ -19,7 +19,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
     AIRFLOW__WEBSERVER__SECRET_KEY: "jumia_secret_key_2024"
-    # SimpleAuthManager — Airflow 3.0 built-in (no provider needed)
+    # SimpleAuthManager — built into Airflow 3.3.2 (no provider needed)
     AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "admin:admin"
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
@@ -108,7 +108,7 @@ services:
         condition: service_healthy
 
   # --------------------------------------------------------------------------
-  # Airflow API server (Airflow 3.0 — replaces legacy webserver)
+  # Airflow API server (Airflow 3.3.2 — replaces legacy webserver)
   # --------------------------------------------------------------------------
   airflow-webserver:
     <<: *airflow-common
@@ -140,7 +140,7 @@ services:
         condition: service_completed_successfully
 
   # --------------------------------------------------------------------------
-  # Airflow DAG processor (required in Airflow 3.0)
+  # Airflow DAG processor (required in Airflow 3)
   # --------------------------------------------------------------------------
   airflow-dag-processor:
     <<: *airflow-common

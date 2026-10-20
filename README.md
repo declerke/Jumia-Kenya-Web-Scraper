@@ -1,6 +1,6 @@
 # 🛒 Jumia Kenya Web Scraper: E-Commerce Price Intelligence Pipeline
 
-**Jumia Kenya Web Scraper** is a production-grade e-commerce price intelligence pipeline that scrapes product listings across 5 active Jumia Kenya categories daily, transforms raw scraped data through a 3-layer dbt model architecture (staging → fact → marts), and surfaces interactive price and discount analytics via a 5-chart Apache Superset dashboard — all orchestrated by Apache Airflow 3.0 running in Docker. The pipeline captures 766 unique product records per daily run using a shared HTTP session with respectful rate limiting, batch-upserts all rows into PostgreSQL in a single network round-trip, and validates data integrity with 15 dbt schema tests and 34 pytest unit tests before the summary task reads its results directly from Airflow XCom with zero additional DB queries.
+**Jumia Kenya Web Scraper** is a production-grade e-commerce price intelligence pipeline that scrapes product listings across 5 active Jumia Kenya categories daily, transforms raw scraped data through a 3-layer dbt model architecture (staging → fact → marts), and surfaces interactive price and discount analytics via a 5-chart Apache Superset dashboard — all orchestrated by Apache Airflow 3.3.2 running in Docker. The pipeline captures 766 unique product records per daily run using a shared HTTP session with respectful rate limiting, batch-upserts all rows into PostgreSQL in a single network round-trip, and validates data integrity with 15 dbt schema tests and 34 pytest unit tests before the summary task reads its results directly from Airflow XCom with zero additional DB queries.
 
 | Metric | Value |
 |--------|-------|
@@ -33,7 +33,7 @@ This pipeline demonstrates the full production data engineering stack applied to
 
 4. **Superset dashboards** — A 5-chart dashboard titled "Jumia Kenya Price Intelligence" connects to `jumia_db` via PostgreSQL and queries the `raw`, `public_marts`, and `public_staging` schemas directly. Charts cover product coverage by category, average listed price, average discount percentage (pie), share of discounted products, and a ranked table of the top discount deals. The dashboard reflects the most recent daily scrape at any given time.
 
-5. **Airflow 3.0 orchestration** — The `jumia_price_pipeline` DAG runs on a `@daily` schedule with `catchup=False`. Four tasks run in a strict linear dependency chain: `scrape_all_categories` (PythonOperator, ~55s) → `run_dbt_models` (BashOperator, ~7s) → `run_dbt_tests` (BashOperator, ~7s) → `log_summary` (PythonOperator, <1s). The summary task pushes its per-category row counts to XCom in the scrape task, then the log task pulls them from XCom — no additional database connection is opened in the final task. The Docker stack runs Airflow 3.0's required multi-process layout: api-server, scheduler, and dag-processor as separate services.
+5. **Airflow 3.3.2 orchestration** — The `jumia_price_pipeline` DAG runs on a `@daily` schedule with `catchup=False`. Four tasks run in a strict linear dependency chain: `scrape_all_categories` (PythonOperator, ~55s) → `run_dbt_models` (BashOperator, ~7s) → `run_dbt_tests` (BashOperator, ~7s) → `log_summary` (PythonOperator, <1s). The summary task pushes its per-category row counts to XCom in the scrape task, then the log task pulls them from XCom — no additional database connection is opened in the final task. The Docker stack runs Airflow 3's required multi-process layout: api-server, scheduler, and dag-processor as separate services.
 
 ---
 
@@ -41,10 +41,11 @@ This pipeline demonstrates the full production data engineering stack applied to
 
 | **Layer** | **Tool** | **Version** |
 |---|---|---|
-| Orchestration | Apache Airflow (LocalExecutor) | 3.0 |
+| Orchestration | Apache Airflow (LocalExecutor) | 3.3.2 |
 | Web scraping | Python requests + BeautifulSoup4 | 2.33.0 / 4.12.3 |
 | Raw storage | PostgreSQL | 15 |
-| Transformation | dbt-postgres | 1.8.2 |
+| Transformation | dbt-core | 1.11.16 |
+| Transformation | dbt-postgres | 1.11.0 |
 | Dashboards | Apache Superset | latest |
 | Containerisation | Docker Compose (7 services) | — |
 | Testing | pytest | 9.0.3 |
@@ -167,10 +168,10 @@ Jumia-Kenya-Web-Scraper/
 │   ├── test_scraper.py                 # 10 tests: HTML card parsing, price filtering, URL building
 │   └── test_utils.py                   # 24 tests: KSh parsing, discount parsing, URL normalisation
 ├── assets/                             # Dashboard screenshots (7 images)
-├── Dockerfile                          # Airflow 3.0 image with requests, bs4, dbt-postgres, psycopg2
+├── Dockerfile                          # Airflow 3.3.2 slim image with dbt isolated in its own virtual environment
 ├── docker-compose.yml                  # 7 services: 2× postgres, init, api-server, scheduler,
 │                                       #   dag-processor, superset
-├── passwords.json                      # Airflow 3.0 SimpleAuthManager credentials
+├── passwords.json                      # Airflow SimpleAuthManager credentials
 ├── requirements.txt                    # Local dev deps — uv venv .venv && uv pip install -r
 ├── .env.example                        # POSTGRES_HOST/PORT/DB/USER/PASSWORD
 └── .gitignore                          # .env, __pycache__, dbt/target/, .venv/
@@ -197,7 +198,7 @@ Jumia-Kenya-Web-Scraper/
    ```bash
    docker compose up -d --build
    ```
-   First build installs requests, BeautifulSoup4, dbt-postgres, and psycopg2 into the Airflow image (~2 minutes).
+   The image installs the scraper dependencies in the Airflow 3.3.2 Python 3.12 environment and dbt 1.11.16 with dbt-postgres 1.11.0 in an isolated virtual environment.
 
 3. **Wait for initialisation** (~60 seconds)
    ```bash
@@ -270,7 +271,7 @@ Jumia-Kenya-Web-Scraper/
 
 - **Web scraping at scale** — requests + BeautifulSoup4 with CSS selector parsing (`article.prd`, `h3.name`, `div.prc`, `div.bdg._dsct`); shared HTTP session across all category fetches; random rate-limiting sleep (2–4s) to avoid triggering anti-bot detection; robust price string parsing handling `KSh`, `KES`, `ksh` prefix variants, comma thousand-separators, and decimal prices
 
-- **Apache Airflow 3.0 DAG design** — 4-task linear pipeline with `PythonOperator` and `BashOperator`; `@daily` schedule with `catchup=False`; XCom push/pull to eliminate redundant DB queries between tasks; Airflow 3.0 multi-process architecture (api-server, scheduler, dag-processor as separate services); SimpleAuthManager for zero-config authentication
+- **Apache Airflow 3.3.2 DAG design** — 4-task linear pipeline with `PythonOperator` and `BashOperator`; `@daily` schedule with `catchup=False`; XCom push/pull to eliminate redundant DB queries between tasks; Airflow 3 multi-process architecture (api-server, scheduler, dag-processor as separate services); SimpleAuthManager for zero-config authentication
 
 - **PostgreSQL engineering** — idempotent UPSERT using `ON CONFLICT (product_url, scrape_date) DO UPDATE SET`; batch insert with `psycopg2.extras.execute_values` reducing N round-trips to 1 per category; Python-level deduplication before batch insert to prevent `CardinalityViolation`; inline `CONSTRAINT ... UNIQUE` in `CREATE TABLE IF NOT EXISTS` for clean idempotent schema management
 
@@ -282,4 +283,4 @@ Jumia-Kenya-Web-Scraper/
 
 - **Docker Compose multi-service orchestration** — 7-service stack with two independent PostgreSQL instances (app data and Airflow metadata on different host ports); custom Airflow Dockerfile installing project deps as `USER airflow` per Airflow 3 container conventions; `service_healthy` dependency conditions using `pg_isready` health checks; named volumes for data persistence across restarts
 
-- **GitHub Actions CI security scanning** — `pip-audit --local` pattern (install-first, then audit installed packages) to handle complex dependency trees that pip-audit's internal resolver cannot solve; `--ignore-vuln GHSA-w75w-9qv4-j5xj` with inline comment documenting the unfixable dbt-common CVE (requires dbt-core 1.34+ upgrade which breaks adapter compatibility); weekly scheduled scan on Mondays
+- **GitHub Actions CI security scanning** — audits installed dependencies from `requirements.txt`, exports and audits the installed package lists from both environments in the built Airflow image, and scans the built image with Trivy; no advisory suppressions; weekly scheduled scan on Mondays
